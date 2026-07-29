@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deepseek Azure Resource Manager</title>
+    <title>QWEN Azure tool</title>
     <style>
         * { box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
             margin: 0;
-            min-height: 100vh;
+            min-height: 101vh;
             background: #f0f2f5;
             display: flex;
             justify-content: center;
@@ -71,6 +71,11 @@
             line-height: 1.5;
             min-height: 80px;
         }
+        #result .mermaid {
+            text-align: center;
+            max-width: 100%;
+            overflow: auto;
+        }
         .error { color: #d32f2f; }
         .success { color: #2e7d32; }
         .loading { color: #6c757d; }
@@ -106,7 +111,7 @@
 
     <!-- 查询面板 -->
     <div id="queryPanel" style="display:none;">
-        <h1>🛠️ Deepseek Azure tool</h1>
+        <h1>🛠️ Deepseek Azure Tool</h1>
         <p>Enter natural language commands to query Azure resource information.</p>
 
         <label for="subscriptionSelect">选择订阅 Select Subscription</label>
@@ -117,6 +122,7 @@
 
         <div class="flex-row">
             <button onclick="callAgent()">🚀 发送查询</button>
+            <button onclick="generateDiagram()" class="secondary">📊 生成架构图</button>
             <button onclick="exportResult()" class="secondary">📥 导出结果</button>
             <button onclick="exportCSV('storage')" class="secondary">📥 导出存储</button>
             <button onclick="exportCSV('vm')" class="secondary">📥 导出虚拟机</button>
@@ -136,6 +142,7 @@
     // =============================
 
     let authToken = localStorage.getItem("authToken") || "";
+    let mermaidLoaded = false;
 
     // ---------- 工具函数 ----------
     function isTokenExpired(token) {
@@ -145,7 +152,7 @@
             const now = Math.floor(Date.now() / 1000);
             return payload.exp < now;
         } catch (e) {
-            return true; // 解析失败视为过期
+            return true;
         }
     }
 
@@ -157,7 +164,40 @@
         document.getElementById('result').innerHTML = '会话已过期，请重新登录。';
         document.getElementById('loginMessage').innerHTML = '';
         document.getElementById('password').value = '';
+    }
 
+    // ---------- Mermaid 渲染 ----------
+    function renderMermaid(code, container) {
+        if (typeof mermaid === 'undefined') {
+            // 动态加载 Mermaid
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+            script.onload = () => {
+                mermaid.initialize({ startOnLoad: true });
+                renderMermaid(code, container);
+            };
+            document.head.appendChild(script);
+            return;
+        }
+        // 清空容器，放入 mermaid 代码
+        container.innerHTML = `<div class="mermaid" style="text-align:center;">${code}</div>`;
+        try {
+            mermaid.run({ nodes: [container.querySelector('.mermaid')] });
+        } catch (e) {
+            container.innerHTML = `<span class="error">❌ Mermaid 渲染失败: ${e.message}</span>`;
+        }
+    }
+
+    // 检测并渲染 Mermaid
+    function processResponseContent(content, container) {
+        const mermaidMatch = content.match(/```mermaid\s*([\s\S]*?)```/);
+        if (mermaidMatch) {
+            renderMermaid(mermaidMatch[1], container);
+            return true;
+        } else {
+            container.innerHTML = content;
+            return false;
+        }
     }
 
     // ---------- 页面加载 ----------
@@ -180,7 +220,6 @@
     }
 
     function showQueryPanel() {
-        // 如果 token 已过期，清除并跳转登录
         if (authToken && isTokenExpired(authToken)) {
             clearSessionAndLogout();
             return;
@@ -194,7 +233,6 @@
 
     // ---------- 导出 CSV ----------
     function exportCSV(resourceType) {
-        // 检查 token 是否过期
         if (authToken && isTokenExpired(authToken)) {
             clearSessionAndLogout();
             return;
@@ -234,9 +272,9 @@
         })
         .catch(error => alert(`导出失败: ${error.message}`));
     }
-    
+
     function openCloudShell() {
-    window.open('https://shell.azure.com', '_blank');
+        window.open('https://shell.azure.com', '_blank');
     }
 
     // ---------- 导出结果 ----------
@@ -260,7 +298,6 @@
 
     // ---------- 加载订阅 ----------
     async function loadSubscriptions() {
-        // 检查 token 是否过期
         if (authToken && isTokenExpired(authToken)) {
             clearSessionAndLogout();
             return;
@@ -296,7 +333,6 @@
                     select.innerHTML = '<option value="">未找到订阅</option>';
                 }
             } else if (response.status === 401) {
-                // token 无效，清除会话
                 clearSessionAndLogout();
             } else {
                 const err = await response.text();
@@ -347,7 +383,6 @@
 
     // ---------- 发送查询 ----------
     async function callAgent() {
-        // 检查 token 是否过期
         if (authToken && isTokenExpired(authToken)) {
             clearSessionAndLogout();
             return;
@@ -401,10 +436,63 @@
             }
 
             const data = await response.json();
-            resultDiv.innerHTML = data.response || JSON.stringify(data, null, 2);
+            const content = data.response || '';
+            // 检测并渲染 Mermaid
+            const rendered = processResponseContent(content, resultDiv);
+            if (!rendered) {
+                resultDiv.innerHTML = content;
+            }
         } catch (error) {
             resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
         }
+    }
+
+    // ---------- 生成架构图（固定指令） ----------
+    function generateDiagram() {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        if (!authToken) {
+            alert('请先登录');
+            showLoginPanel();
+            return;
+        }
+
+        const subscriptionId = document.getElementById('subscriptionSelect').value;
+        if (!subscriptionId) {
+            alert('请先选择订阅');
+            return;
+        }
+
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成架构图...</span>';
+
+        fetch(`${BASE_URL}/infra_agent`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            },
+            body: JSON.stringify({
+                prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
+                subscription_id: subscriptionId
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || `HTTP ${response.status}`); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            const content = data.response || '';
+            processResponseContent(content, resultDiv);
+        })
+        .catch(error => {
+            resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+        });
     }
 
     // ---------- 手动退出 ----------
@@ -427,11 +515,13 @@
             callAgent();
         }
     });
+
+    // 定时检查 token
     setInterval(() => {
-    if (authToken && isTokenExpired(authToken)) {
-        clearSessionAndLogout();
-    }
-    }, 30000); 
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+        }
+    }, 30000);
 </script>
 </body>
 </html>
