@@ -524,7 +524,7 @@
         }
     }, 30000);
     // ---------- 下载 Draw.io 图表 ----------
-  function downloadDrawio() {
+ function downloadDrawio() {
     if (!authToken || isTokenExpired(authToken)) {
         clearSessionAndLogout();
         return;
@@ -538,37 +538,50 @@
     const resultDiv = document.getElementById('result');
     resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表...</span>';
 
-    // ✅ 调用独立下载端点
     fetch(`${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`, {
         headers: {
             'Authorization': `Bearer ${authToken}`,
             'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
         }
     })
-    .then(response => {
+    .then(async response => {
         if (!response.ok) {
-            return response.json().then(err => { throw new Error(err.error || `HTTP ${response.status}`); });
+            const errText = await response.text();
+            let errMsg = `HTTP ${response.status}`;
+            try {
+                const errJson = JSON.parse(errText);
+                errMsg = errJson.error || errMsg;
+            } catch (_) {
+                errMsg = errText || errMsg;
+            }
+            throw new Error(errMsg);
         }
-        const contentDisposition = response.headers.get('Content-Disposition');
+
+        // 更健壮地解析 Content-Disposition 中的文件名
+        const contentDisposition = response.headers.get('Content-Disposition') || '';
         let filename = 'azure_architecture.drawio';
-        if (contentDisposition) {
-            const match = contentDisposition.match(/filename=(.+)/);
-            if (match) filename = match[1];
+        // 支持 filename="xxx" 或 filename*=UTF-8''xxx
+        const fnMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (fnMatch) {
+            filename = fnMatch[1].replace(/['"]/g, '').trim();
         }
-        return response.blob().then(blob => ({ blob, filename }));
+
+        const blob = await response.blob();
+        return { blob, filename };
     })
     .then(({ blob, filename }) => {
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
+        link.href = url;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        URL.revokeObjectURL(link.href);
+        URL.revokeObjectURL(url);
         resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
     })
     .catch(error => {
-        console.error('完整错误:', error);
+        console.error('Draw.io 导出错误:', error);
         resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
     });}
 </script>
