@@ -55,6 +55,7 @@
             cursor: pointer;
             transition: background 0.15s;
             margin-right: 10px;
+            margin-bottom: 8px;
         }
         button:hover { background: #005a9e; }
         button.secondary { background: #6c757d; }
@@ -78,6 +79,7 @@
         }
         .error { color: #d32f2f; }
         .success { color: #2e7d32; }
+        .warning { color: #f57c00; }
         .loading { color: #6c757d; }
         #loginMessage { margin-top: 10px; font-weight: 500; }
         .flex-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
@@ -91,7 +93,7 @@
         }
         @media (max-width: 500px) {
             .container { padding: 20px; }
-            button { width: 100%; margin-bottom: 8px; }
+            button { width: 100%; }
         }
     </style>
 </head>
@@ -123,6 +125,7 @@
         <div class="flex-row">
             <button onclick="callAgent()">🚀 发送查询</button>
             <button onclick="generateDiagram()" class="secondary">📊 生成架构图</button>
+            <button onclick="downloadDrawio()" class="secondary">📐 导出 Draw.io</button>
             <button onclick="exportResult()" class="secondary">📥 导出结果</button>
             <button onclick="exportCSV('storage')" class="secondary">📥 导出存储</button>
             <button onclick="exportCSV('vm')" class="secondary">📥 导出虚拟机</button>
@@ -139,6 +142,7 @@
     // ========== 配置区 ==========
     const BASE_URL = "https://gtsdrt-apim-frontdoor-d9cnbuape0adhdgj.a01.azurefd.net/deepseek-api";
     const APIM_SUBSCRIPTION_KEY = "ea124885f20b4e63af94779b439f4039";
+    const FETCH_TIMEOUT_MS = 70000; // 70秒超时（后端AI可能较慢）
     // =============================
 
     let authToken = localStorage.getItem("authToken") || "";
@@ -166,10 +170,26 @@
         document.getElementById('password').value = '';
     }
 
+    // 带超时的 fetch
+    async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            if (error.name === 'AbortError') {
+                throw new Error(`请求超时（>${timeoutMs/1000}秒），请稍后重试`);
+            }
+            throw error;
+        }
+    }
+
     // ---------- Mermaid 渲染 ----------
     function renderMermaid(code, container) {
         if (typeof mermaid === 'undefined') {
-            // 动态加载 Mermaid
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
             script.onload = () => {
@@ -179,7 +199,6 @@
             document.head.appendChild(script);
             return;
         }
-        // 清空容器，放入 mermaid 代码
         container.innerHTML = `<div class="mermaid" style="text-align:center;">${code}</div>`;
         try {
             mermaid.run({ nodes: [container.querySelector('.mermaid')] });
@@ -188,7 +207,6 @@
         }
     }
 
-    // 检测并渲染 Mermaid
     function processResponseContent(content, container) {
         const mermaidMatch = content.match(/```mermaid\s*([\s\S]*?)```/);
         if (mermaidMatch) {
@@ -249,9 +267,11 @@
             alert("请先选择订阅");
             return;
         }
-        let url = `${BASE_URL}/export_data?resource_type=${resourceType}&subscription_id=${subscriptionId}`;
+        // ✅ 修复：后端路由是 /export，不是 /export_data
+        let url = `${BASE_URL}/export?resource_type=${resourceType}&subscription_id=${subscriptionId}`;
         if (resourceGroup.trim()) url += `&resource_group_name=${encodeURIComponent(resourceGroup.trim())}`;
-        fetch(url, {
+
+        fetchWithTimeout(url, {
             headers: {
                 'Authorization': `Bearer ${authToken}`,
                 'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
@@ -310,12 +330,12 @@
 
         const select = document.getElementById('subscriptionSelect');
         try {
-            const response = await fetch(`${BASE_URL}/list_subscriptions`, {
+            const response = await fetchWithTimeout(`${BASE_URL}/list_subscriptions`, {
                 headers: {
                     'Authorization': `Bearer ${authToken}`,
                     'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
                 }
-            });
+            }, 15000);
             if (response.ok) {
                 const data = await response.json();
                 if (data.subscriptions && data.subscriptions.length > 0) {
@@ -357,14 +377,14 @@
 
         msg.innerHTML = '⏳ 登录中...';
         try {
-            const response = await fetch(`${BASE_URL}/login`, {
+            const response = await fetchWithTimeout(`${BASE_URL}/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
                 },
                 body: JSON.stringify({ username, password })
-            });
+            }, 15000);
             const data = await response.json();
             if (response.ok) {
                 localStorage.setItem('authToken', data.token);
@@ -409,7 +429,7 @@
         resultDiv.innerHTML = '<span class="loading">⏳ 处理中...</span>';
 
         try {
-            const response = await fetch(`${BASE_URL}/infra_agent`, {
+            const response = await fetchWithTimeout(`${BASE_URL}/infra_agent`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -420,7 +440,7 @@
                     prompt: prompt,
                     subscription_id: subscriptionId
                 })
-            });
+            }, 120000);
 
             if (!response.ok) {
                 let errorMsg = `HTTP ${response.status}`;
@@ -437,7 +457,6 @@
 
             const data = await response.json();
             const content = data.response || '';
-            // 检测并渲染 Mermaid
             const rendered = processResponseContent(content, resultDiv);
             if (!rendered) {
                 resultDiv.innerHTML = content;
@@ -468,7 +487,7 @@
         const resultDiv = document.getElementById('result');
         resultDiv.innerHTML = '<span class="loading">⏳ 正在生成架构图...</span>';
 
-        fetch(`${BASE_URL}/infra_agent`, {
+        fetchWithTimeout(`${BASE_URL}/infra_agent`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -479,7 +498,7 @@
                 prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
                 subscription_id: subscriptionId
             })
-        })
+        }, 120000)
         .then(response => {
             if (!response.ok) {
                 return response.json().then(err => { throw new Error(err.error || `HTTP ${response.status}`); });
@@ -522,6 +541,94 @@
             clearSessionAndLogout();
         }
     }, 30000);
+
+    // ---------- 下载 Draw.io 图表（修复版） ----------
+    function downloadDrawio() {
+        if (!authToken || isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        const subscriptionId = document.getElementById('subscriptionSelect').value;
+        if (!subscriptionId) {
+            alert('请先选择订阅');
+            return;
+        }
+
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-60 秒）...</span>';
+
+        fetchWithTimeout(
+            `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+                }
+            },
+            FETCH_TIMEOUT_MS
+        )
+        .then(async response => {
+            if (!response.ok) {
+                let errMsg = `HTTP ${response.status}`;
+                try {
+                    const errData = await response.json();
+                    errMsg = errData.error || errData.message || errMsg;
+                } catch (_) {
+                    const text = await response.text();
+                    if (text) errMsg = text.substring(0, 200);
+                }
+                throw new Error(errMsg);
+            }
+
+            // ✅ 修复：更健壮的 Content-Disposition 解析
+            const contentDisposition = response.headers.get('Content-Disposition') || '';
+            let filename = 'azure_architecture.drawio';
+            // 匹配 filename="xxx" 或 filename=xxx（不含引号）
+            const fnMatch = contentDisposition.match(/filename="?([^";]+)"?/);
+            if (fnMatch) {
+                filename = fnMatch[1].trim();
+            }
+
+            const blob = await response.blob();
+            return { blob, filename };
+        })
+        .then(async ({ blob, filename }) => {
+            // ✅ 新增：校验下载内容，如果疑似空图则提示用户
+            const text = await blob.text();
+            const isEmptyLike = text.length < 800 || text.includes('No resources found') || !text.includes('<mxCell');
+
+            if (isEmptyLike) {
+                resultDiv.innerHTML = `
+                    <span class="warning">⚠️ 下载的图表内容较少或为空。</span><br><br>
+                    <b>可能原因：</b><br>
+                    1. 当前订阅下资源较少，AI 无法生成复杂架构图<br>
+                    2. AI 生成超时或返回空内容<br><br>
+                    <b>建议：</b>点击 <b>「📊 生成架构图」</b> 按钮，使用 Mermaid 语法生成架构图，效果通常更稳定。<br>
+                    文件仍会继续下载，您可以用 draw.io 打开查看。
+                `;
+            } else {
+                resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
+            }
+
+            // 无论如何都执行下载
+            const blobUrl = URL.createObjectURL(new Blob([text], { type: 'application/xml' }));
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(blobUrl);
+        })
+        .catch(error => {
+            console.error('Draw.io 导出错误:', error);
+            let msg = error.message;
+            if (msg.includes('500')) {
+                msg += '<br><br><b>提示：</b>后端 AI 生成失败，建议点击「📊 生成架构图」使用 Mermaid 替代。';
+            }
+            resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${msg}</span>`;
+        });
+    }
 </script>
 </body>
 </html>
