@@ -142,7 +142,8 @@
     // ========== 配置区 ==========
     const BASE_URL = "https://gtsdrt-apim-frontdoor-d9cnbuape0adhdgj.a01.azurefd.net/deepseek-api";
     const APIM_SUBSCRIPTION_KEY = "ea124885f20b4e63af94779b439f4039";
-    const FETCH_TIMEOUT_MS = 70000; // 70秒超时（后端AI可能较慢）
+    // 将超时从70秒提升至180秒，以适应 Draw.io 生成等耗时操作（AI 需多次调用工具）
+    const FETCH_TIMEOUT_MS = 180000; // 180 秒
     // =============================
 
     let authToken = localStorage.getItem("authToken") || "";
@@ -267,7 +268,6 @@
             alert("请先选择订阅");
             return;
         }
-        // ✅ 修复：后端路由是 /export，不是 /export_data
         let url = `${BASE_URL}/export?resource_type=${resourceType}&subscription_id=${subscriptionId}`;
         if (resourceGroup.trim()) url += `&resource_group_name=${encodeURIComponent(resourceGroup.trim())}`;
 
@@ -440,7 +440,7 @@
                     prompt: prompt,
                     subscription_id: subscriptionId
                 })
-            }, 120000);
+            }, 120000); // 普通查询超时仍保持 120 秒
 
             if (!response.ok) {
                 let errorMsg = `HTTP ${response.status}`;
@@ -542,7 +542,7 @@
         }
     }, 30000);
 
-    // ---------- 下载 Draw.io 图表（修复版） ----------
+    // ---------- 下载 Draw.io 图表 ----------
     function downloadDrawio() {
         if (!authToken || isTokenExpired(authToken)) {
             clearSessionAndLogout();
@@ -555,7 +555,7 @@
         }
 
         const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-60 秒）...</span>';
+        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-120 秒）...</span>';
 
         fetchWithTimeout(
             `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
@@ -564,8 +564,8 @@
                     'Authorization': `Bearer ${authToken}`,
                     'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
                 }
-            },
-            FETCH_TIMEOUT_MS
+            }
+            // 使用全局 FETCH_TIMEOUT_MS (180秒)
         )
         .then(async response => {
             if (!response.ok) {
@@ -580,10 +580,8 @@
                 throw new Error(errMsg);
             }
 
-            // ✅ 修复：更健壮的 Content-Disposition 解析
             const contentDisposition = response.headers.get('Content-Disposition') || '';
             let filename = 'azure_architecture.drawio';
-            // 匹配 filename="xxx" 或 filename=xxx（不含引号）
             const fnMatch = contentDisposition.match(/filename="?([^";]+)"?/);
             if (fnMatch) {
                 filename = fnMatch[1].trim();
@@ -593,7 +591,6 @@
             return { blob, filename };
         })
         .then(async ({ blob, filename }) => {
-            // ✅ 新增：校验下载内容，如果疑似空图则提示用户
             const text = await blob.text();
             const isEmptyLike = text.length < 800 || text.includes('No resources found') || !text.includes('<mxCell');
 
@@ -610,7 +607,6 @@
                 resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
             }
 
-            // 无论如何都执行下载
             const blobUrl = URL.createObjectURL(new Blob([text], { type: 'application/xml' }));
             const link = document.createElement('a');
             link.href = blobUrl;
