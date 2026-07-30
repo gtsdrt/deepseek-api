@@ -538,7 +538,7 @@
     const resultDiv = document.getElementById('result');
     resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表...</span>';
 
-    // 直接调用新端点
+    // 调用独立的导出端点
     fetch(`${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`, {
         headers: {
             'Authorization': `Bearer ${authToken}`,
