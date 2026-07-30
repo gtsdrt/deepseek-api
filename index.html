@@ -568,6 +568,7 @@
         resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
     })
     .catch(error => {
+        console.error('完整错误:', error);
         resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
     });}
 </script>
