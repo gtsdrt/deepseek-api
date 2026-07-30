@@ -524,7 +524,7 @@
         }
     }, 30000);
     // ---------- 下载 Draw.io 图表 ----------
-    function downloadDrawio() {
+  function downloadDrawio() {
     if (!authToken || isTokenExpired(authToken)) {
         clearSessionAndLogout();
         return;
@@ -538,7 +538,7 @@
     const resultDiv = document.getElementById('result');
     resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表...</span>';
 
-    // 调用独立的导出端点
+    // ✅ 调用独立下载端点
     fetch(`${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`, {
         headers: {
             'Authorization': `Bearer ${authToken}`,
