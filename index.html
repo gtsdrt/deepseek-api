@@ -544,87 +544,73 @@
 
     // ---------- 下载 Draw.io 图表 ----------
     function downloadDrawio() {
-        if (!authToken || isTokenExpired(authToken)) {
-            clearSessionAndLogout();
-            return;
-        }
-        const subscriptionId = document.getElementById('subscriptionSelect').value;
-        if (!subscriptionId) {
-            alert('请先选择订阅');
-            return;
-        }
-
-        const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-120 秒）...</span>';
-
-        fetchWithTimeout(
-            `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                    'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
-                }
-            }
-            // 使用全局 FETCH_TIMEOUT_MS (180秒)
-        )
-        .then(async response => {
-            if (!response.ok) {
-                let errMsg = `HTTP ${response.status}`;
-                try {
-                    const errData = await response.json();
-                    errMsg = errData.error || errData.message || errMsg;
-                } catch (_) {
-                    const text = await response.text();
-                    if (text) errMsg = text.substring(0, 200);
-                }
-                throw new Error(errMsg);
-            }
-
-            const contentDisposition = response.headers.get('Content-Disposition') || '';
-            let filename = 'azure_architecture.drawio';
-            const fnMatch = contentDisposition.match(/filename="?([^";]+)"?/);
-            if (fnMatch) {
-                filename = fnMatch[1].trim();
-            }
-
-            const blob = await response.blob();
-            return { blob, filename };
-        })
-        .then(async ({ blob, filename }) => {
-            const text = await blob.text();
-            const isEmptyLike = text.length < 800 || text.includes('No resources found') || !text.includes('<mxCell');
-
-            if (isEmptyLike) {
-                resultDiv.innerHTML = `
-                    <span class="warning">⚠️ 下载的图表内容较少或为空。</span><br><br>
-                    <b>可能原因：</b><br>
-                    1. 当前订阅下资源较少，AI 无法生成复杂架构图<br>
-                    2. AI 生成超时或返回空内容<br><br>
-                    <b>建议：</b>点击 <b>「📊 生成架构图」</b> 按钮，使用 Mermaid 语法生成架构图，效果通常更稳定。<br>
-                    文件仍会继续下载，您可以用 draw.io 打开查看。
-                `;
-            } else {
-                resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
-            }
-
-            const blobUrl = URL.createObjectURL(new Blob([text], { type: 'application/xml' }));
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(blobUrl);
-        })
-        .catch(error => {
-            console.error('Draw.io 导出错误:', error);
-            let msg = error.message;
-            if (msg.includes('500')) {
-                msg += '<br><br><b>提示：</b>后端 AI 生成失败，建议点击「📊 生成架构图」使用 Mermaid 替代。';
-            }
-            resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${msg}</span>`;
-        });
+    if (!authToken || isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
     }
+    const subscriptionId = document.getElementById('subscriptionSelect').value;
+    if (!subscriptionId) {
+        alert('请先选择订阅');
+        return;
+    }
+
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-120 秒）...</span>';
+
+    fetchWithTimeout(
+        `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
+        {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }
+    )
+    .then(async response => {
+        if (!response.ok) {
+            let errMsg = `HTTP ${response.status}`;
+            try {
+                const errData = await response.json();
+                errMsg = errData.error || errData.message || errMsg;
+            } catch (_) {
+                const text = await response.text();
+                if (text) errMsg = text.substring(0, 200);
+            }
+            throw new Error(errMsg);
+        }
+        // 读取为纯文本（不是 JSON）
+        const xmlText = await response.text();
+        if (!xmlText || xmlText.length < 200) {
+            throw new Error('生成的 XML 内容过短，可能为空。');
+        }
+        // 简单校验是否包含 <mxfile>
+        if (!xmlText.includes('<mxfile')) {
+            throw new Error('返回的内容不包含有效的 draw.io XML (缺少 <mxfile> 标记)。');
+        }
+        return xmlText;
+    })
+    .then(xmlContent => {
+        resultDiv.innerHTML = `<span class="success">✅ Draw.io XML 已生成，开始下载...</span>`;
+
+        // 下载为 .drawio 文件
+        const blob = new Blob([xmlContent], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `azure_architecture_${new Date().toISOString().slice(0,10)}.drawio`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    })
+    .catch(error => {
+        console.error('Draw.io 导出错误:', error);
+        let msg = error.message;
+        if (msg.includes('500')) {
+            msg += '<br><br><b>提示：</b>后端生成失败，建议点击「📊 生成架构图」使用 Mermaid 代替。';
+        }
+        resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${msg}</span>`;
+    });
+}
 </script>
 </body>
 </html>
