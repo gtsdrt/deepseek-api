@@ -20,7 +20,10 @@ function downloadDrawio() {
     })
     .then(response => {
         if (!response.ok) {
-            return response.json().then(err => { throw new Error(err.error || `HTTP ${response.status}`); });
+            // 尝试解析错误信息，但可能不是 JSON
+            return response.text().then(text => {
+                throw new Error(`HTTP ${response.status}: ${text}`);
+            });
         }
         const contentDisposition = response.headers.get('Content-Disposition');
         let filename = 'azure_architecture.drawio';
@@ -41,6 +44,7 @@ function downloadDrawio() {
         resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
     })
     .catch(error => {
+        console.error('完整错误:', error);
         resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
     });
 }
