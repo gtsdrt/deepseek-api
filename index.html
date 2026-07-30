@@ -123,7 +123,6 @@
         <div class="flex-row">
             <button onclick="callAgent()">🚀 发送查询</button>
             <button onclick="generateDiagram()" class="secondary">📊 生成架构图</button>
-            <button onclick="downloadDrawio()" class="secondary">📐 导出 Draw.io</button>
             <button onclick="exportResult()" class="secondary">📥 导出结果</button>
             <button onclick="exportCSV('storage')" class="secondary">📥 导出存储</button>
             <button onclick="exportCSV('vm')" class="secondary">📥 导出虚拟机</button>
@@ -523,75 +522,6 @@
             clearSessionAndLogout();
         }
     }, 30000);
-
-    // ---------- 下载 Draw.io 图表 ----------
-    function downloadDrawio() {
-        if (!authToken || isTokenExpired(authToken)) {
-            clearSessionAndLogout();
-            return;
-        }
-        const subscriptionId = document.getElementById('subscriptionSelect').value;
-        if (!subscriptionId) {
-            alert('请先选择订阅');
-            return;
-        }
-
-        const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表...</span>';
-
-        fetch(`${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`, {
-            headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
-            }
-        })
-        .then(response => {
-            // 先读取文本内容，然后根据状态码判断
-            return response.text().then(text => {
-                if (!response.ok) {
-                    // 状态码非 200，抛出错误并包含响应文本
-                    throw new Error(`HTTP ${response.status}: ${text}`);
-                }
-                const contentDisposition = response.headers.get('Content-Disposition');
-                let filename = 'azure_architecture.drawio';
-                if (contentDisposition) {
-                    const match = contentDisposition.match(/filename=(.+)/);
-                    if (match) filename = match[1];
-                }
-                // 检查是否为 XML
-                if (text.trim().startsWith('<mxfile')) {
-                    // 检查是否包含节点
-                    if (!text.includes('<mxCell')) {
-                        throw new Error('生成的 XML 不包含任何节点，可能资源列表为空或 AI 未生成有效图形。');
-                    }
-                    const blob = new Blob([text], { type: 'application/xml' });
-                    return { blob, filename };
-                } else {
-                    // 尝试解析 JSON 错误
-                    try {
-                        const json = JSON.parse(text);
-                        throw new Error(json.error || json.message || '未知错误');
-                    } catch (e) {
-                        throw new Error(`服务器返回非 XML 内容: ${text.substring(0, 100)}`);
-                    }
-                }
-            });
-        })
-        .then(({ blob, filename }) => {
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-            resultDiv.innerHTML = `<span class="success">✅ 图表已下载: ${filename}</span>`;
-        })
-        .catch(error => {
-            console.error('完整错误:', error);
-            resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
-        });
-    }
 </script>
 </body>
 </html>
