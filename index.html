@@ -125,7 +125,6 @@
         <div class="flex-row">
             <button onclick="callAgent()">🚀 发送查询</button>
             <button onclick="generateDiagram()" class="secondary">📊 生成架构图</button>
-            <button onclick="downloadDrawio()" class="secondary">📐 导出 Draw.io</button>
             <button onclick="generateDrawioXML()" class="secondary">🗺️ 生成 Draw.io XML</button>
             <button onclick="exportResult()" class="secondary">📥 导出结果</button>
             <button onclick="exportCSV('storage')" class="secondary">📥 导出存储</button>
@@ -141,7 +140,7 @@
 
 <script>
     // ========== 配置区 ==========
-    const BASE_URL = "https://gtsdrt-apim-frontdoor-d9cnbuape0adhdgj.a01.azurefd.net/deepseek-api";
+    const BASE_URL = "https://qwen-test-apim.azure-api.net/deepseek-api";
     const APIM_SUBSCRIPTION_KEY = "ea124885f20b4e63af94779b439f4039";
     // 将超时从70秒提升至180秒，以适应 Draw.io 生成等耗时操作（AI 需多次调用工具）
     const FETCH_TIMEOUT_MS = 360000; // 180 秒
