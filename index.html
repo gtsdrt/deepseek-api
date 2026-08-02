@@ -11,7 +11,8 @@
             margin: 0;
             min-height: 101vh;
             background: url('./homer.png') no-repeat center center fixed;
-            background-size: cover;
+            background-size: contain;  /* ← 改成 contain */
+            background-color: #1a1a2e; 
             display: flex;
             justify-content: center;
             align-items: center;
@@ -151,15 +152,7 @@
             <button onclick="openCloudShell()" class="secondary">☁️ Azure CLI</button>
             <button class="secondary" onclick="logout()">退出登录</button>
         </div>
-
-        <div class="flex-row" style="margin-top: 8px;">
-            <button onclick="queryKimiBalance()" class="secondary" style="background:#6A1B9A;">💰 Kimi 余额</button>
-            <button onclick="queryDeepSeekBalance()" class="secondary" style="background:#1565C0;">💰 DeepSeek 余额</button>
-            <button onclick="queryKimiUsage()" class="secondary" style="background:#8E24AA;">📈 Kimi 用量</button>
-            <button onclick="queryDeepSeekUsage()" class="secondary" style="background:#0277BD;">📈 DeepSeek 用量</button>
-            <button onclick="exportKimiUsage()" class="secondary" style="background:#AB47BC;">📥 Kimi 用量导出</button>
-            <button onclick="exportDeepSeekUsage()" class="secondary" style="background:#29B6F6;">📥 DeepSeek 用量导出</button>
-        </div>
+        
 
         <div id="result">等待查询...</div>
         <div class="footer-note">💡 提示：按 <kbd>Ctrl+Enter</kbd> 快速发送</div>
