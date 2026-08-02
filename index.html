@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deepseek Azure tool</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            min-height: 101vh;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1500px;
+            width: 100%;
+            background: white;
+            padding: 30px 35px;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        h1, h2 { margin-top: 0; color: #1a1a1a; }
+        h1 { font-size: 26px; }
+        h2 { font-size: 22px; }
+        p { color: #444; margin: 8px 0 12px; }
+        label { font-weight: 600; display: block; margin: 12px 0 4px; }
+        select, input[type="text"], input[type="password"], textarea {
+            width: 100%;
+            padding: 10px 12px;
+            margin: 6px 0 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 15px;
+            background: white;
+        }
+        select:focus, input:focus, textarea:focus {
+            border-color: #0078d4;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0,120,212,0.25);
+        }
+        textarea { height: 120px; resize: vertical; font-family: inherit; }
+        button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            margin-right: 10px;
+            margin-bottom: 8px;
+        }
+        button:hover { background: #005a9e; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #5a6268; }
+        #result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 15px;
+            line-height: 1.5;
+            min-height: 80px;
+        }
+        #result .mermaid {
+            text-align: center;
+            max-width: 100%;
+            overflow: auto;
+        }
+        .error { color: #d32f2f; }
+        .success { color: #2e7d32; }
+        .warning { color: #f57c00; }
+        .loading { color: #6c757d; }
+        #loginMessage { margin-top: 10px; font-weight: 500; }
+        .flex-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .footer-note {
+            margin-top: 25px;
+            font-size: 13px;
+            color: #888;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            text-align: center;
+        }
+        @media (max-width: 500px) {
+            .container { padding: 20px; }
+            button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="app">
+    <!-- 登录面板 -->
+    <div id="loginPanel">
+        <h2>🔐 登录Login</h2>
+        <p>Enter the account credentials to access the Azure Resource Manager.</p>
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="" value="">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="" value="">
+        <button onclick="login()">Login</button>
+        <div id="loginMessage"></div>
+    </div>
+
+    <!-- 查询面板 -->
+    <div id="queryPanel" style="display:none;">
+        <h1>🛠️ Deepseek Azure Tool</h1>
+        <p>Enter natural language commands to query Azure resource information.</p>
+
+        <label for="subscriptionSelect">选择订阅 Select Subscription</label>
+        <select id="subscriptionSelect"><option value="">加载中...</option></select>
+
+        <label for="aiProviderSelect">选择 AI 模型 AI Model</label>
+        <select id="aiProviderSelect">
+            <option value="kimi" selected>Kimi (Moonshot AI)</option>
+            <option value="deepseek">DeepSeek</option>
+        </select>
+
+        <label for="promptInput">指令</label>
+        <textarea id="promptInput" placeholder="输入指令">list all virtual networks in the subscription</textarea>
+
+        <div class="flex-row">
+            <button onclick="callAgent()">🚀 发送查询</button>
+            <button onclick="generateDiagram()" class="secondary">📊 生成架构图</button>
+            <button onclick="generateDrawioXML()" class="secondary">🗺️ 生成 Draw.io XML</button>
+            <button onclick="exportResult()" class="secondary">📥 导出结果</button>
+            <button onclick="exportCSV('storage')" class="secondary">📥 导出存储</button>
+            <button onclick="exportCSV('vm')" class="secondary">📥 导出虚拟机</button>
+            <button onclick="openCloudShell()" class="secondary">☁️ Azure CLI</button>
+            <button class="secondary" onclick="logout()">退出登录</button>
+        </div>
+
+        <div class="flex-row" style="margin-top: 8px;">
+            <button onclick="queryKimiBalance()" class="secondary" style="background:#6A1B9A;">💰 Kimi 余额</button>
+            <button onclick="queryDeepSeekBalance()" class="secondary" style="background:#1565C0;">💰 DeepSeek 余额</button>
+            <button onclick="queryKimiUsage()" class="secondary" style="background:#8E24AA;">📈 Kimi 用量</button>
+            <button onclick="queryDeepSeekUsage()" class="secondary" style="background:#0277BD;">📈 DeepSeek 用量</button>
+            <button onclick="exportKimiUsage()" class="secondary" style="background:#AB47BC;">📥 Kimi 用量导出</button>
+            <button onclick="exportDeepSeekUsage()" class="secondary" style="background:#29B6F6;">📥 DeepSeek 用量导出</button>
+        </div>
+
+        <div id="result">等待查询...</div>
+        <div class="footer-note">💡 提示：按 <kbd>Ctrl+Enter</kbd> 快速发送</div>
+    </div>
+</div>
+
+<script>
+    // ========== 配置区 ==========
+    const BASE_URL = "https://qwen-test-apim.azure-api.net/deepseek-api";
+    const APIM_SUBSCRIPTION_KEY = "ea124885f20b4e63af94779b439f4039";
+    // 将超时从70秒提升至180秒，以适应 Draw.io 生成等耗时操作（AI 需多次调用工具）
+    const FETCH_TIMEOUT_MS = 360000; // 180 秒
+    // =============================
+
+    let authToken = localStorage.getItem("authToken") || "";
+    let mermaidLoaded = false;
+
+    // ---------- 工具函数 ----------
+    function isTokenExpired(token) {
+        if (!token) return true;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const now = Math.floor(Date.now() / 1000);
+            return payload.exp < now;
+        } catch (e) {
+            return true;
+        }
+    }
+
+    function clearSessionAndLogout() {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('selectedSubscriptionId');
+        authToken = '';
+        showLoginPanel();
+        document.getElementById('result').innerHTML = '会话已过期，请重新登录。';
+        document.getElementById('loginMessage').innerHTML = '';
+        document.getElementById('password').value = '';
+    }
+
+    // 带超时的 fetch
+    async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            if (error.name === 'AbortError') {
+                throw new Error(`请求超时（>${timeoutMs/1000}秒），请稍后重试`);
+            }
+            throw error;
+        }
+    }
+
+    // ---------- Mermaid 渲染 ----------
+    function renderMermaid(code, container) {
+        if (typeof mermaid === 'undefined') {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+            script.onload = () => {
+                mermaid.initialize({ startOnLoad: true });
+                renderMermaid(code, container);
+            };
+            document.head.appendChild(script);
+            return;
+        }
+        container.innerHTML = `<div class="mermaid" style="text-align:center;">${code}</div>`;
+        try {
+            mermaid.run({ nodes: [container.querySelector('.mermaid')] });
+        } catch (e) {
+            container.innerHTML = `<span class="error">❌ Mermaid 渲染失败: ${e.message}</span>`;
+        }
+    }
+
+    function processResponseContent(content, container) {
+        const mermaidMatch = content.match(/```mermaid\s*([\s\S]*?)```/);
+        if (mermaidMatch) {
+            renderMermaid(mermaidMatch[1], container);
+            return true;
+        } else {
+            container.innerHTML = content;
+            return false;
+        }
+    }
+
+    // ---------- 页面加载 ----------
+    window.addEventListener('DOMContentLoaded', function() {
+        if (authToken) {
+            if (isTokenExpired(authToken)) {
+                clearSessionAndLogout();
+            } else {
+                showQueryPanel();
+                loadSubscriptions();
+            }
+        } else {
+            showLoginPanel();
+        }
+    });
+
+    function showLoginPanel() {
+        document.getElementById('loginPanel').style.display = 'block';
+        document.getElementById('queryPanel').style.display = 'none';
+    }
+
+    function showQueryPanel() {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        document.getElementById('loginPanel').style.display = 'none';
+        document.getElementById('queryPanel').style.display = 'block';
+        if (authToken && document.getElementById('subscriptionSelect').options.length <= 1) {
+            loadSubscriptions();
+        }
+    }
+
+    // ---------- 导出 CSV ----------
+    function exportCSV(resourceType) {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        if (!authToken) {
+            alert('请先登录');
+            showLoginPanel();
+            return;
+        }
+
+        const subscriptionId = document.getElementById('subscriptionSelect').value;
+        const resourceGroup = prompt("请输入资源组名称（留空则导出整个订阅）：") || "";
+        if (!subscriptionId) {
+            alert("请先选择订阅");
+            return;
+        }
+        let url = `${BASE_URL}/export?resource_type=${resourceType}&subscription_id=${subscriptionId}`;
+        if (resourceGroup.trim()) url += `&resource_group_name=${encodeURIComponent(resourceGroup.trim())}`;
+
+        fetchWithTimeout(url, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.blob();
+        })
+        .then(blob => {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${resourceType}_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        })
+        .catch(error => alert(`导出失败: ${error.message}`));
+    }
+
+    function openCloudShell() {
+        window.open('https://shell.azure.com', '_blank');
+    }
+
+    // ---------- 导出结果 ----------
+    function exportResult() {
+        const resultDiv = document.getElementById('result');
+        const content = resultDiv.innerText || resultDiv.textContent;
+        if (!content || content.trim() === '' || content === '等待查询...' || content === '登录成功，请发送查询。') {
+            alert('没有可导出的查询结果，请先发送查询。');
+            return;
+        }
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `query_result_${timestamp}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
+
+    // ---------- 加载订阅 ----------
+    async function loadSubscriptions() {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        if (!authToken) {
+            const select = document.getElementById('subscriptionSelect');
+            select.innerHTML = '<option value="">请先登录</option>';
+            return;
+        }
+
+        const select = document.getElementById('subscriptionSelect');
+        try {
+            const response = await fetchWithTimeout(`${BASE_URL}/list_subscriptions`, {
+                headers: {
+                    'Authorization': `Bearer ${authToken}`,
+                    'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+                }
+            }, 15000);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.subscriptions && data.subscriptions.length > 0) {
+                    select.innerHTML = data.subscriptions.map(sub =>
+                        `<option value="${sub.id}">${sub.name} (${sub.id})</option>`
+                    ).join('');
+                    const savedId = localStorage.getItem('selectedSubscriptionId');
+                    if (savedId && data.subscriptions.some(s => s.id === savedId)) {
+                        select.value = savedId;
+                    } else {
+                        select.value = data.subscriptions[0].id;
+                        localStorage.setItem('selectedSubscriptionId', data.subscriptions[0].id);
+                    }
+                } else {
+                    select.innerHTML = '<option value="">未找到订阅</option>';
+                }
+            } else if (response.status === 401) {
+                clearSessionAndLogout();
+            } else {
+                const err = await response.text();
+                select.innerHTML = `<option value="">加载失败: ${err}</option>`;
+            }
+        } catch (error) {
+            console.error('加载订阅列表失败:', error);
+            select.innerHTML = '<option value="">加载失败</option>';
+        }
+    }
+
+    // ---------- 登录 ----------
+    async function login() {
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const msg = document.getElementById('loginMessage');
+
+        if (!username || !password) {
+            msg.innerHTML = '<span class="error">请输入用户名和密码</span>';
+            return;
+        }
+
+        msg.innerHTML = '⏳ 登录中...';
+        try {
+            const response = await fetchWithTimeout(`${BASE_URL}/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+                },
+                body: JSON.stringify({ username, password })
+            }, 15000);
+            const data = await response.json();
+            if (response.ok) {
+                localStorage.setItem('authToken', data.token);
+                authToken = data.token;
+                msg.innerHTML = '<span class="success">✅ 登录成功！</span>';
+                showQueryPanel();
+                document.getElementById('result').innerHTML = '登录成功，请发送查询。';
+                loadSubscriptions();
+            } else {
+                msg.innerHTML = `<span class="error">❌ 登录失败: ${data.error || '未知错误'}</span>`;
+            }
+        } catch (error) {
+            msg.innerHTML = `<span class="error">❌ 请求错误: ${error.message}</span>`;
+        }
+    }
+
+    // ---------- 发送查询 ----------
+    async function callAgent() {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        if (!authToken) {
+            document.getElementById('result').innerHTML = '<span class="error">请先登录</span>';
+            showLoginPanel();
+            return;
+        }
+
+        const prompt = document.getElementById('promptInput').value.trim();
+        const resultDiv = document.getElementById('result');
+        if (!prompt) {
+            resultDiv.innerHTML = '<span class="error">请输入查询内容</span>';
+            return;
+        }
+
+        const subscriptionId = document.getElementById('subscriptionSelect').value;
+        if (!subscriptionId) {
+            resultDiv.innerHTML = '<span class="error">请选择有效的订阅</span>';
+            return;
+        }
+
+        resultDiv.innerHTML = '<span class="loading">⏳ 处理中...</span>';
+
+        try {
+            const response = await fetchWithTimeout(`${BASE_URL}/infra_agent`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`,
+                    'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    subscription_id: subscriptionId,
+                    ai_provider: document.getElementById('aiProviderSelect').value
+                })
+            }, 120000); // 普通查询超时仍保持 120 秒
+
+            if (!response.ok) {
+                let errorMsg = `HTTP ${response.status}`;
+                try {
+                    const errData = await response.json();
+                    errorMsg += `: ${errData.error || errData.message || ''}`;
+                } catch (_) {}
+                if (response.status === 401) {
+                    clearSessionAndLogout();
+                    return;
+                }
+                throw new Error(errorMsg);
+            }
+
+            const data = await response.json();
+            const content = data.response || '';
+            const rendered = processResponseContent(content, resultDiv);
+            if (!rendered) {
+                resultDiv.innerHTML = content;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+        }
+    }
+
+    // ---------- 生成架构图（固定指令） ----------
+    function generateDiagram() {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+            return;
+        }
+        if (!authToken) {
+            alert('请先登录');
+            showLoginPanel();
+            return;
+        }
+
+        const subscriptionId = document.getElementById('subscriptionSelect').value;
+        if (!subscriptionId) {
+            alert('请先选择订阅');
+            return;
+        }
+
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '<span class="loading">⏳ 正在生成架构图...</span>';
+
+        fetchWithTimeout(`${BASE_URL}/infra_agent`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            },
+            body: JSON.stringify({
+                prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
+                subscription_id: subscriptionId,
+                ai_provider: document.getElementById('aiProviderSelect').value
+            })
+        }, 120000)
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || `HTTP ${response.status}`); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            const content = data.response || '';
+            processResponseContent(content, resultDiv);
+        })
+        .catch(error => {
+            resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+        });
+    }
+
+    // ---------- 手动退出 ----------
+    function logout() {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('selectedSubscriptionId');
+        authToken = '';
+        showLoginPanel();
+        document.getElementById('loginMessage').innerHTML = '';
+        document.getElementById('result').innerHTML = '等待查询...';
+        const select = document.getElementById('subscriptionSelect');
+        select.innerHTML = '<option value="">请先登录</option>';
+        document.getElementById('password').value = '';
+    }
+
+    // Ctrl+Enter 快捷键
+    document.getElementById('promptInput').addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            callAgent();
+        }
+    });
+
+    // 定时检查 token
+    setInterval(() => {
+        if (authToken && isTokenExpired(authToken)) {
+            clearSessionAndLogout();
+        }
+    }, 30000);
+
+    // ---------- 下载 Draw.io 图表 ----------
+    function downloadDrawio() {
+    if (!authToken || isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    const subscriptionId = document.getElementById('subscriptionSelect').value;
+    if (!subscriptionId) {
+        alert('请先选择订阅');
+        return;
+    }
+
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '<span class="loading">⏳ 正在生成 Draw.io 图表，请耐心等待（可能需要 30-120 秒）...</span>';
+
+    fetchWithTimeout(
+        `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
+        {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        },
+        90000
+    )
+    .then(async response => {
+        if (!response.ok) {
+            let errMsg = `HTTP ${response.status}`;
+            try {
+                const errData = await response.json();
+                errMsg = errData.error || errData.message || errMsg;
+            } catch (_) {
+                const text = await response.text();
+                if (text) errMsg = text.substring(0, 200);
+            }
+            throw new Error(errMsg);
+        }
+        // 读取为纯文本（不是 JSON）
+        const xmlText = await response.text();
+        if (!xmlText || xmlText.length < 200) {
+            throw new Error('生成的 XML 内容过短，可能为空。');
+        }
+        // 简单校验是否包含 <mxfile>
+        if (!xmlText.includes('<mxfile')) {
+            throw new Error('返回的内容不包含有效的 draw.io XML (缺少 <mxfile> 标记)。');
+        }
+        return xmlText;
+    })
+    .then(xmlContent => {
+        resultDiv.innerHTML = `<span class="success">✅ Draw.io XML 已生成，开始下载...</span>`;
+
+        // 下载为 .drawio 文件
+        const blob = new Blob([xmlContent], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `azure_architecture_${new Date().toISOString().slice(0,10)}.drawio`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    })
+    .catch(error => {
+        console.error('Draw.io 导出错误:', error);
+        let msg = error.message;
+        if (msg.includes('500')) {
+            msg += '<br><br><b>提示：</b>后端生成失败，建议点击「📊 生成架构图」使用 Mermaid 代替。';
+        }
+        resultDiv.innerHTML = `<span class="error">❌ 导出失败: ${msg}</span>`;
+    });
+}
+// ---------- 生成 Draw.io XML 并预览 ----------
+function generateDrawioXML() {
+    if (!authToken || isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    const subscriptionId = document.getElementById('subscriptionSelect').value;
+    if (!subscriptionId) {
+        alert('请先选择订阅');
+        return;
+    }
+
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '<span class="loading">⏳ 正在调用 AI 生成 Draw.io 架构图 XML，请耐心等待（约 30-120 秒）...</span>';
+
+    fetchWithTimeout(
+        `${BASE_URL}/export_drawio?subscription_id=${encodeURIComponent(subscriptionId)}`,
+        {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        },
+        360000 // 6 分钟超时，AI 生成 XML 较慢
+    )
+    .then(async response => {
+        if (!response.ok) {
+            let errMsg = `HTTP ${response.status}`;
+            try {
+                const errData = await response.json();
+                errMsg = errData.error || errData.message || errMsg;
+            } catch (_) {
+                const text = await response.text();
+                if (text) errMsg = text.substring(0, 300);
+            }
+            throw new Error(errMsg);
+        }
+        return response.text();
+    })
+    .then(xmlContent => {
+        if (!xmlContent || xmlContent.length < 200) {
+            throw new Error('生成的 XML 内容过短，可能为空。');
+        }
+        if (!xmlContent.includes('<mxfile')) {
+            throw new Error('返回的内容不包含有效的 draw.io XML (缺少 <mxfile> 标记)。');
+        }
+
+        // 创建下载 Blob
+        const blob = new Blob([xmlContent], { type: 'application/xml' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const dateStr = new Date().toISOString().slice(0, 10);
+
+        // 转义 XML 用于页面显示
+        const escapedXml = xmlContent
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // 截断显示（如果太长）
+        const maxDisplayLen = 8000;
+        const displayXml = xmlContent.length > maxDisplayLen 
+            ? escapedXml.substring(0, maxDisplayLen) + '\n\n... (XML 过长，共 ' + xmlContent.length + ' 字符，已截断显示，请下载完整文件)' 
+            : escapedXml;
+
+        resultDiv.innerHTML = `
+            <div style="margin-bottom: 15px; padding: 12px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #2e7d32;">
+                <span class="success" style="font-size: 16px; font-weight: 600;">✅ Draw.io XML 架构图生成成功！</span>
+                <div style="margin-top: 8px; font-size: 13px; color: #555;">
+                    共 ${xmlContent.length} 个字符，可直接复制下方 XML 或点击下载。
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <a href="${downloadUrl}" download="azure_architecture_${dateStr}.drawio" 
+                   style="display:inline-block; background:#0078d4; color:white; padding:10px 24px; border-radius:6px; text-decoration:none; font-weight:600; font-size:15px; margin-right: 10px;">
+                   📥 下载 .drawio 文件
+                </a>
+                <button onclick="copyXmlToClipboard()" style="background:#6c757d; color:white; border:none; padding:10px 20px; border-radius:6px; font-weight:600; font-size:15px; cursor:pointer;">
+                   📋 复制 XML
+                </button>
+            </div>
+
+            <div style="background:#1e1e1e; border:1px solid #333; border-radius:6px; padding:12px; max-height:500px; overflow:auto;">
+                <pre id="xmlPreview" style="margin:0; font-family: 'Consolas', 'Monaco', monospace; font-size:12px; line-height:1.5; color:#d4d4d4; white-space:pre-wrap; word-break:break-all;">${displayXml}</pre>
+            </div>
+
+            <div style="margin-top: 12px; font-size: 13px; color: #666; line-height: 1.6;">
+                💡 <b>使用方式：</b><br>
+                1. 点击「下载 .drawio 文件」保存后，在 <a href="https://app.diagrams.net" target="_blank" style="color:#0078d4;">draw.io</a> 中直接打开<br>
+                2. 或点击「复制 XML」，然后在 draw.io 中 → File → Open From → Device → 粘贴 XML<br>
+                3. 生成的架构图包含：区域 → 资源组 → 资源层级，以及资源间连接关系
+            </div>
+        `;
+
+        // 将完整 XML 暂存到全局变量，供复制使用
+        window._lastGeneratedXml = xmlContent;
+    })
+    .catch(error => {
+        console.error('Draw.io XML 生成错误:', error);
+        let msg = error.message;
+        if (msg.includes('500') || msg.includes('timeout') || msg.includes('超时')) {
+            msg += '<br><br><b>💡 提示：</b>AI 生成 XML 耗时较长，建议：<br>1. 减少订阅中的资源数量后再试；<br>2. 或点击「📊 生成架构图」使用 Mermaid 格式作为替代。';
+        }
+        resultDiv.innerHTML = `<span class="error">❌ 生成失败: ${msg}</span>`;
+    });
+}
+
+// ---------- 复制 XML 到剪贴板 ----------
+function copyXmlToClipboard() {
+    const xml = window._lastGeneratedXml;
+    if (!xml) {
+        alert('没有可复制的 XML 内容');
+        return;
+    }
+    navigator.clipboard.writeText(xml).then(() => {
+        alert('✅ XML 已复制到剪贴板！');
+    }).catch(err => {
+        // 降级方案
+        const textarea = document.createElement('textarea');
+        textarea.value = xml;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('✅ XML 已复制到剪贴板！');
+    });
+}
+
+// ========== Kimi / DeepSeek 用量管理前端函数 ==========
+
+async function queryKimiBalance() {
+    await queryAIBalance('kimi');
+}
+
+async function queryDeepSeekBalance() {
+    await queryAIBalance('deepseek');
+}
+
+async function queryAIBalance(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const resultDiv = document.getElementById('result');
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+    resultDiv.innerHTML = `<span class="loading">⏳ 正在查询 ${label} 余额...</span>`;
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_balance`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            let html = `<div style="background:#e8f5e9; border-left:4px solid #2e7d32; padding:15px; border-radius:6px;">`;
+            html += `<h3 style="margin-top:0; color:#2e7d32;">💰 ${label} 账户余额</h3>`;
+            html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+
+            if (provider === 'kimi') {
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">可用余额</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">$${data.available_balance !== null ? data.available_balance : 'N/A'}</td></tr>`;
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">代金券余额</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">$${data.voucher_balance !== null ? data.voucher_balance : 'N/A'}</td></tr>`;
+                html += `<tr><td style="padding:8px; font-weight:600;">现金余额</td><td style="padding:8px;">$${data.cash_balance !== null ? data.cash_balance : 'N/A'}</td></tr>`;
+            } else {
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">账户可用</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">${data.is_available ? '✅ 可用' : '❌ 不可用'}</td></tr>`;
+                if (data.balance_infos && data.balance_infos.length > 0) {
+                    data.balance_infos.forEach(b => {
+                        html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">${b.currency || 'CNY'}</td>`;
+                        html += `<td style="padding:8px; border-bottom:1px solid #c8e6c9;">总: ${b.total_balance || 'N/A'} | 赠送: ${b.granted_balance || 'N/A'} | 充值: ${b.topped_up_balance || 'N/A'}</td></tr>`;
+                    });
+                }
+            }
+            html += `</table></div>`;
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = `<span class="error">❌ 查询失败: ${data.message || '未知错误'}</span>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+    }
+}
+
+async function queryKimiUsage() {
+    await queryAIUsage('kimi');
+}
+
+async function queryDeepSeekUsage() {
+    await queryAIUsage('deepseek');
+}
+
+async function queryAIUsage(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const hours = prompt('查询最近多少小时的用量？（默认 24）', '24');
+    if (hours === null) return;
+    const h = parseInt(hours) || 24;
+
+    const resultDiv = document.getElementById('result');
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+    resultDiv.innerHTML = `<span class="loading">⏳ 正在查询 ${label} 最近 ${h} 小时用量...</span>`;
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_usage?hours=${h}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            let html = `<div style="background:#e3f2fd; border-left:4px solid #1565c0; padding:15px; border-radius:6px;">`;
+            html += `<h3 style="margin-top:0; color:#1565c0;">📈 ${label} 用量汇总（最近 ${data.period_hours} 小时）</h3>`;
+            html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">总请求数</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${data.total_requests}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Prompt Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_prompt_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Completion Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_completion_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Total Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; font-weight:600;">记录条数</td><td style="padding:8px;">${data.records_count}</td></tr>`;
+            html += `</table>`;
+
+            if (data.by_model && Object.keys(data.by_model).length > 0) {
+                html += `<h4 style="margin-top:15px; color:#1565c0;">按模型统计</h4>`;
+                html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+                html += `<tr style="background:#bbdefb;"><th style="padding:8px; text-align:left;">模型</th><th style="padding:8px; text-align:left;">请求数</th><th style="padding:8px; text-align:left;">Tokens</th></tr>`;
+                for (const [model, stats] of Object.entries(data.by_model)) {
+                    html += `<tr><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${model}</td><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${stats.requests}</td><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${(stats.tokens || 0).toLocaleString()}</td></tr>`;
+                }
+                html += `</table>`;
+            }
+            html += `</div>`;
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = `<span class="error">❌ 查询失败: ${data.message || '未知错误'}</span>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+    }
+}
+
+async function exportKimiUsage() {
+    await exportAIUsage('kimi');
+}
+
+async function exportDeepSeekUsage() {
+    await exportAIUsage('deepseek');
+}
+
+async function exportAIUsage(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const hours = prompt('导出最近多少小时的用量？（默认 24）', '24');
+    if (hours === null) return;
+    const h = parseInt(hours) || 24;
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_usage_export?hours=${h}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${provider}_usage_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+
+        document.getElementById('result').innerHTML = `<span class="success">✅ ${label} 用量 CSV 已下载</span>`;
+    } catch (error) {
+        document.getElementById('result').innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
+    }
+}
+</script>
+</body>
+</html>
