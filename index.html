@@ -17,13 +17,25 @@
             align-items: center;
             padding: 20px;
         }
-        .container {
-            max-width: 1500px;
-            width: 100%;
+        #loginPanel {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            padding: 30px 35px;
+            border-radius: 16px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+            max-width: 460px;
+            margin: 0 auto;
+        }
+        #queryPanel {
             background: white;
             padding: 30px 35px;
             border-radius: 12px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        .container {
+            max-width: 1500px;
+            width: 100%;
         }
         h1, h2 { margin-top: 0; color: #1a1a1a; }
         h1 { font-size: 26px; }
@@ -120,6 +132,12 @@
         <label for="subscriptionSelect">选择订阅 Select Subscription</label>
         <select id="subscriptionSelect"><option value="">加载中...</option></select>
 
+        <label for="aiProviderSelect">选择 AI 模型 AI Model</label>
+        <select id="aiProviderSelect">
+            <option value="kimi" selected>Kimi (Moonshot AI)</option>
+            <option value="deepseek">DeepSeek</option>
+        </select>
+
         <label for="promptInput">指令</label>
         <textarea id="promptInput" placeholder="输入指令">list all virtual networks in the subscription</textarea>
 
@@ -132,6 +150,15 @@
             <button onclick="exportCSV('vm')" class="secondary">📥 导出虚拟机</button>
             <button onclick="openCloudShell()" class="secondary">☁️ Azure CLI</button>
             <button class="secondary" onclick="logout()">退出登录</button>
+        </div>
+
+        <div class="flex-row" style="margin-top: 8px;">
+            <button onclick="queryKimiBalance()" class="secondary" style="background:#6A1B9A;">💰 Kimi 余额</button>
+            <button onclick="queryDeepSeekBalance()" class="secondary" style="background:#1565C0;">💰 DeepSeek 余额</button>
+            <button onclick="queryKimiUsage()" class="secondary" style="background:#8E24AA;">📈 Kimi 用量</button>
+            <button onclick="queryDeepSeekUsage()" class="secondary" style="background:#0277BD;">📈 DeepSeek 用量</button>
+            <button onclick="exportKimiUsage()" class="secondary" style="background:#AB47BC;">📥 Kimi 用量导出</button>
+            <button onclick="exportDeepSeekUsage()" class="secondary" style="background:#29B6F6;">📥 DeepSeek 用量导出</button>
         </div>
 
         <div id="result">等待查询...</div>
@@ -439,7 +466,8 @@
                 },
                 body: JSON.stringify({
                     prompt: prompt,
-                    subscription_id: subscriptionId
+                    subscription_id: subscriptionId,
+                    ai_provider: document.getElementById('aiProviderSelect').value
                 })
             }, 120000); // 普通查询超时仍保持 120 秒
 
@@ -497,7 +525,8 @@
             },
             body: JSON.stringify({
                 prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
-                subscription_id: subscriptionId
+                subscription_id: subscriptionId,
+                ai_provider: document.getElementById('aiProviderSelect').value
             })
         }, 120000)
         .then(response => {
@@ -739,6 +768,205 @@ function copyXmlToClipboard() {
         document.body.removeChild(textarea);
         alert('✅ XML 已复制到剪贴板！');
     });
+}
+
+// ========== Kimi / DeepSeek 用量管理前端函数 ==========
+
+async function queryKimiBalance() {
+    await queryAIBalance('kimi');
+}
+
+async function queryDeepSeekBalance() {
+    await queryAIBalance('deepseek');
+}
+
+async function queryAIBalance(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const resultDiv = document.getElementById('result');
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+    resultDiv.innerHTML = `<span class="loading">⏳ 正在查询 ${label} 余额...</span>`;
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_balance`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            let html = `<div style="background:#e8f5e9; border-left:4px solid #2e7d32; padding:15px; border-radius:6px;">`;
+            html += `<h3 style="margin-top:0; color:#2e7d32;">💰 ${label} 账户余额</h3>`;
+            html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+
+            if (provider === 'kimi') {
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">可用余额</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">$${data.available_balance !== null ? data.available_balance : 'N/A'}</td></tr>`;
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">代金券余额</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">$${data.voucher_balance !== null ? data.voucher_balance : 'N/A'}</td></tr>`;
+                html += `<tr><td style="padding:8px; font-weight:600;">现金余额</td><td style="padding:8px;">$${data.cash_balance !== null ? data.cash_balance : 'N/A'}</td></tr>`;
+            } else {
+                html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">账户可用</td><td style="padding:8px; border-bottom:1px solid #c8e6c9;">${data.is_available ? '✅ 可用' : '❌ 不可用'}</td></tr>`;
+                if (data.balance_infos && data.balance_infos.length > 0) {
+                    data.balance_infos.forEach(b => {
+                        html += `<tr><td style="padding:8px; border-bottom:1px solid #c8e6c9; font-weight:600;">${b.currency || 'CNY'}</td>`;
+                        html += `<td style="padding:8px; border-bottom:1px solid #c8e6c9;">总: ${b.total_balance || 'N/A'} | 赠送: ${b.granted_balance || 'N/A'} | 充值: ${b.topped_up_balance || 'N/A'}</td></tr>`;
+                    });
+                }
+            }
+            html += `</table></div>`;
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = `<span class="error">❌ 查询失败: ${data.message || '未知错误'}</span>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+    }
+}
+
+async function queryKimiUsage() {
+    await queryAIUsage('kimi');
+}
+
+async function queryDeepSeekUsage() {
+    await queryAIUsage('deepseek');
+}
+
+async function queryAIUsage(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const hours = prompt('查询最近多少小时的用量？（默认 24）', '24');
+    if (hours === null) return;
+    const h = parseInt(hours) || 24;
+
+    const resultDiv = document.getElementById('result');
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+    resultDiv.innerHTML = `<span class="loading">⏳ 正在查询 ${label} 最近 ${h} 小时用量...</span>`;
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_usage?hours=${h}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status === 'success') {
+            let html = `<div style="background:#e3f2fd; border-left:4px solid #1565c0; padding:15px; border-radius:6px;">`;
+            html += `<h3 style="margin-top:0; color:#1565c0;">📈 ${label} 用量汇总（最近 ${data.period_hours} 小时）</h3>`;
+            html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">总请求数</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${data.total_requests}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Prompt Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_prompt_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Completion Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_completion_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; border-bottom:1px solid #bbdefb; font-weight:600;">Total Tokens</td><td style="padding:8px; border-bottom:1px solid #bbdefb;">${(data.total_tokens || 0).toLocaleString()}</td></tr>`;
+            html += `<tr><td style="padding:8px; font-weight:600;">记录条数</td><td style="padding:8px;">${data.records_count}</td></tr>`;
+            html += `</table>`;
+
+            if (data.by_model && Object.keys(data.by_model).length > 0) {
+                html += `<h4 style="margin-top:15px; color:#1565c0;">按模型统计</h4>`;
+                html += `<table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+                html += `<tr style="background:#bbdefb;"><th style="padding:8px; text-align:left;">模型</th><th style="padding:8px; text-align:left;">请求数</th><th style="padding:8px; text-align:left;">Tokens</th></tr>`;
+                for (const [model, stats] of Object.entries(data.by_model)) {
+                    html += `<tr><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${model}</td><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${stats.requests}</td><td style="padding:8px; border-bottom:1px solid #e3f2fd;">${(stats.tokens || 0).toLocaleString()}</td></tr>`;
+                }
+                html += `</table>`;
+            }
+            html += `</div>`;
+            resultDiv.innerHTML = html;
+        } else {
+            resultDiv.innerHTML = `<span class="error">❌ 查询失败: ${data.message || '未知错误'}</span>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<span class="error">❌ 错误: ${error.message}</span>`;
+    }
+}
+
+async function exportKimiUsage() {
+    await exportAIUsage('kimi');
+}
+
+async function exportDeepSeekUsage() {
+    await exportAIUsage('deepseek');
+}
+
+async function exportAIUsage(provider) {
+    if (authToken && isTokenExpired(authToken)) {
+        clearSessionAndLogout();
+        return;
+    }
+    if (!authToken) {
+        alert('请先登录');
+        showLoginPanel();
+        return;
+    }
+
+    const hours = prompt('导出最近多少小时的用量？（默认 24）', '24');
+    if (hours === null) return;
+    const h = parseInt(hours) || 24;
+    const label = provider === 'deepseek' ? 'DeepSeek' : 'Kimi';
+
+    try {
+        const response = await fetchWithTimeout(`${BASE_URL}/${provider}_usage_export?hours=${h}`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Ocp-Apim-Subscription-Key': APIM_SUBSCRIPTION_KEY
+            }
+        }, 15000);
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                clearSessionAndLogout();
+                return;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${provider}_usage_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+
+        document.getElementById('result').innerHTML = `<span class="success">✅ ${label} 用量 CSV 已下载</span>`;
+    } catch (error) {
+        document.getElementById('result').innerHTML = `<span class="error">❌ 导出失败: ${error.message}</span>`;
+    }
 }
 </script>
 </body>
