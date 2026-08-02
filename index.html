@@ -9,16 +9,31 @@
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
             margin: 0;
-            min-height: 101vh;
-            background: #f0f2f5;
+            min-height: 100vh;
+        /* ★★★ 关键：引用同目录下的图片，把 'your-image-name.jpg' 换成你的真实文件名 ★★★ */
+            background: url('./homer.png') no-repeat center center fixed;
+            background-size: cover;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
-        }
+            padding: 20px;}
+
         .container {
             max-width: 1500px;
             width: 100%;
+        }
+
+        #loginPanel {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px); /* 兼容 Safari */
+            padding: 30px 35px;
+            border-radius: 16px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+            max-width: 460px;
+            margin: 0 auto;
+            }
+        #queryPanel {
             background: white;
             padding: 30px 35px;
             border-radius: 12px;
@@ -94,6 +109,8 @@
         @media (max-width: 500px) {
             .container { padding: 20px; }
             button { width: 100%; }
+
+        
         }
     </style>
 </head>
@@ -118,12 +135,6 @@
 
         <label for="subscriptionSelect">选择订阅 Select Subscription</label>
         <select id="subscriptionSelect"><option value="">加载中...</option></select>
-
-        <label for="aiProviderSelect">选择 AI 模型 AI Model</label>
-        <select id="aiProviderSelect">
-            <option value="kimi" selected>Kimi (Moonshot AI)</option>
-            <option value="deepseek">DeepSeek</option>
-        </select>
 
         <label for="promptInput">指令</label>
         <textarea id="promptInput" placeholder="输入指令">list all virtual networks in the subscription</textarea>
@@ -444,8 +455,7 @@
                 },
                 body: JSON.stringify({
                     prompt: prompt,
-                    subscription_id: subscriptionId,
-                    ai_provider: document.getElementById('aiProviderSelect').value
+                    subscription_id: subscriptionId
                 })
             }, 120000); // 普通查询超时仍保持 120 秒
 
@@ -503,8 +513,7 @@
             },
             body: JSON.stringify({
                 prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
-                subscription_id: subscriptionId,
-                ai_provider: document.getElementById('aiProviderSelect').value
+                subscription_id: subscriptionId
             })
         }, 120000)
         .then(response => {
