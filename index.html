@@ -110,6 +110,7 @@
             button { width: 100%; }
         }
     </style>
+<base target="_blank">
 </head>
 <body>
 <div class="container" id="app">
@@ -139,6 +140,18 @@
             <option value="deepseek">DeepSeek</option>
             <option value="qwen">Qwen</option>
         </select>
+
+        <!-- 对话历史控制 -->
+        <div style="background:#f0f7ff; border:1px solid #b3d9ff; border-radius:8px; padding:12px 15px; margin:10px 0;">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                <div>
+                    <span style="font-weight:600; color:#005a9e;">💬 当前对话</span>
+                    <span id="conversationStatus" style="font-size:13px; color:#666; margin-left:8px;">新会话</span>
+                </div>
+                <button onclick="startNewConversation()" style="background:#e74c3c; padding:6px 14px; font-size:13px; margin:0;">🆕 新对话</button>
+            </div>
+            <div id="conversationIdDisplay" style="font-size:11px; color:#888; margin-top:6px; font-family:monospace;"></div>
+        </div>
 
         <label for="promptInput">指令</label>
         <textarea id="promptInput" placeholder="输入指令">list all virtual networks in the subscription</textarea>
@@ -171,6 +184,35 @@
     let authToken = localStorage.getItem("authToken") || "";
     let mermaidLoaded = false;
 
+    // ========== 对话历史管理 ==========
+    const CONV_STORAGE_KEY = "azure_chat_conversation_id";
+    let conversationId = localStorage.getItem(CONV_STORAGE_KEY) || "";
+
+    function getOrCreateConversationId() {
+        if (!conversationId) {
+            conversationId = "conv-" + crypto.randomUUID();
+            localStorage.setItem(CONV_STORAGE_KEY, conversationId);
+        }
+        return conversationId;
+    }
+
+    function startNewConversation() {
+        conversationId = "conv-" + crypto.randomUUID();
+        localStorage.setItem(CONV_STORAGE_KEY, conversationId);
+        updateConversationUI();
+        document.getElementById('result').innerHTML = '<span class="success">✅ 已开启新对话，之前的对话历史仍保留在服务器上。</span>';
+    }
+
+    function updateConversationUI() {
+        const statusEl = document.getElementById('conversationStatus');
+        const idEl = document.getElementById('conversationIdDisplay');
+        if (statusEl && idEl) {
+            // 简单判断：如果这是本次页面加载后第一次显示，且 ID 是旧的，显示"继续会话"
+            statusEl.textContent = "会话进行中";
+            idEl.textContent = "ID: " + conversationId;
+        }
+    }
+
     // ---------- 工具函数 ----------
     function isTokenExpired(token) {
         if (!token) return true;
@@ -186,6 +228,8 @@
     function clearSessionAndLogout() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('selectedSubscriptionId');
+        localStorage.removeItem(CONV_STORAGE_KEY);
+        conversationId = "";
         authToken = '';
         showLoginPanel();
         document.getElementById('result').innerHTML = '会话已过期，请重新登录。';
@@ -270,6 +314,8 @@
         if (authToken && document.getElementById('subscriptionSelect').options.length <= 1) {
             loadSubscriptions();
         }
+        // 初始化对话 UI
+        updateConversationUI();
     }
 
     // ---------- 导出 CSV ----------
@@ -461,7 +507,8 @@
                 body: JSON.stringify({
                     prompt: prompt,
                     subscription_id: subscriptionId,
-                    ai_provider: document.getElementById('aiProviderSelect').value
+                    ai_provider: document.getElementById('aiProviderSelect').value,
+                    conversation_id: getOrCreateConversationId()
                 })
             }, 120000); // 普通查询超时仍保持 120 秒
 
@@ -520,7 +567,8 @@
             body: JSON.stringify({
                 prompt: '生成当前订阅的网络架构图（使用Mermaid语法，包含VNet、子网、VM、NSG等资源关系）',
                 subscription_id: subscriptionId,
-                ai_provider: document.getElementById('aiProviderSelect').value
+                ai_provider: document.getElementById('aiProviderSelect').value,
+                conversation_id: getOrCreateConversationId()
             })
         }, 120000)
         .then(response => {
@@ -542,6 +590,8 @@
     function logout() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('selectedSubscriptionId');
+        localStorage.removeItem(CONV_STORAGE_KEY);
+        conversationId = "";
         authToken = '';
         showLoginPanel();
         document.getElementById('loginMessage').innerHTML = '';
